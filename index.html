@@ -83,6 +83,11 @@
             const [isProcessing, setIsProcessing] = useState(false);
             const [error, setError] = useState(null);
             const [activeTab, setActiveTab] = useState('transform'); // transform or color
+            
+            // API Key State
+            const [apiKey, setApiKey] = useState(() => localStorage.getItem('gemini_api_key') || '');
+            const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+            const apiKeyInputRef = useRef(null);
 
             // Cropping & Tone State
             const [crop, setCrop] = useState({ 
@@ -103,7 +108,6 @@
             });
 
             // UI State
-            const [sliderPos, setSliderPos] = useState(50);
             const imgRef = useRef(null);
             const containerRef = useRef(null);
 
@@ -118,7 +122,6 @@
                     setSelectedImage(URL.createObjectURL(file));
                     setResultImage(null);
                     setCrop({ x: 0, y: 0, zoom: 1, rotation: 0, brightness: 100, contrast: 100, saturation: 100 });
-                    setSliderPos(50);
                 }
             };
 
@@ -170,6 +173,18 @@
                 return 3/4;
             };
 
+            const handleSaveApiKey = () => {
+                const newKey = apiKeyInputRef.current.value.trim();
+                if (newKey) {
+                    setApiKey(newKey);
+                    localStorage.setItem('gemini_api_key', newKey);
+                    setShowApiKeyModal(false);
+                    setError(null);
+                } else {
+                    setError("Vui lòng nhập API Key hợp lệ.");
+                }
+            };
+
             // Xây dựng lệnh (Prompt) cho AI thực thi dựa trên cài đặt
             const buildPrompt = () => {
                 let prompt = "You are a professional ID photo editor. Your task is to change the clothing and background of the uploaded image WHILE STRICTLY PRESERVING THE EXACT FACE AND IDENTITY OF THE PERSON.\n\n";
@@ -207,15 +222,20 @@
                 else prompt += "Do not touch the hair. Keep it exactly as it is.\n";
 
                 // Skin & Lighting
-                prompt += `4. Retouching: `;
-                if (settings.skin > 70) prompt += "Apply high-end professional skin retouching. Smooth skin naturally, remove blemishes, and even out skin tone perfectly without making it look plastic.\n";
-                else if (settings.skin > 20) prompt += "Apply subtle, natural skin smoothing. Remove minor blemishes while keeping realistic skin texture.\n";
-                else prompt += "Keep the original skin texture exactly as it is. NO smoothing.\n";
+                prompt += `4. Retouching & Lighting: `;
+                if (settings.lighting === 'studio') {
+                    prompt += "Apply professional studio lighting with even flash to eliminate shadows and dark circles under the eyes. ";
+                } else if (settings.lighting === 'bright') {
+                    prompt += "Apply bright, high-key lighting for a youthful look. ";
+                } else if (settings.lighting === 'cinematic') {
+                    prompt += "Apply dramatic, contoured lighting to create depth. ";
+                }
 
-                prompt += `5. Professional Studio Lighting: `;
-                if (settings.lighting === 'studio') prompt += "Apply professional ID photo studio lighting (even flash lighting). Illuminate the face perfectly and evenly, removing harsh shadows, dark under-eye circles, or uneven exposure from the original photo. Make it look like it was shot by a professional photographer in a well-lit studio.\n";
-                else if (settings.lighting === 'bright') prompt += "Apply bright, high-key studio lighting. The face must be exceptionally bright, clear, and radiant, eliminating almost all shadows for a fresh, energetic look.\n";
-                else if (settings.lighting === 'cinematic') prompt += "Apply professional portrait lighting with subtle depth (butterfly lighting). Ensure the face is well-lit for an ID, but with soft, natural modeling to define the facial structure beautifully.\n";
+                if (settings.skin > 70) {
+                    prompt += "Apply subtle, natural skin smoothing and evening of skin tone across the face and neck. Do NOT over-blur or change facial features.\n";
+                } else {
+                    prompt += "Keep the original skin texture and details exactly as they are. No smoothing.\n";
+                }
 
                 return prompt;
             };
@@ -274,6 +294,12 @@
             };
 
             const generateImage = async () => {
+                if (!apiKey) {
+                    setError("Vui lòng nhập Google API Key trước khi xử lý ảnh.");
+                    setShowApiKeyModal(true);
+                    return;
+                }
+
                 setIsProcessing(true);
                 setError(null);
                 
@@ -286,7 +312,6 @@
                     const base64Data = base64Image.split(',')[1];
 
                     // 2. GỌI API GEMINI 3.1 FLASH IMAGE ĐỂ XỬ LÝ THỰC SỰ
-                    const apiKey = ""; // API Key được Canvas tự động tiêm vào
                     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent?key=${apiKey}`;
                     
                     const payload = {
@@ -323,11 +348,11 @@
                         setResultImage(finalImageUrl);
                     } else {
                         console.error("AI Response error:", result);
-                        setError("AI không thể tạo ảnh ở cấu hình này. Vui lòng thử đổi trang phục hoặc ảnh đầu vào.");
+                        setError("AI không thể tạo ảnh ở cấu hình này. Vui lòng kiểm tra lại API Key hoặc thử đổi ảnh đầu vào.");
                     }
 
                 } catch (err) {
-                    setError("Có lỗi kết nối máy chủ AI. Vui lòng thử lại sau.");
+                    setError("Có lỗi kết nối máy chủ AI. Vui lòng kiểm tra kết nối mạng hoặc API Key của bạn.");
                     console.error(err);
                 } finally {
                     setIsProcessing(false);
@@ -347,30 +372,58 @@
                 }
             };
 
-            const handleAIAdvice = () => {
-                // Mô phỏng AI tự động chọn cấu hình dựa trên mục đích (Ví dụ)
-                alert("Tính năng AI tư vấn đang hoạt động ngầm. Gợi ý: Nếu xin Visa, nền trắng và Sơ mi/Vest là chuẩn nhất!");
-                setSettings(prev => ({...prev, bgColor: 'white', clothes: 'male_suit_tie', skin: 30}));
-            };
-
             return (
-                <div className="min-h-screen pb-12">
+                <div className="min-h-screen pb-12 relative">
                     {/* Header */}
-                    <header className="bg-white border-b border-slate-200 sticky top-0 z-50">
+                    <header className="bg-white border-b border-slate-200 sticky top-0 z-40">
                         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
                             <div className="flex items-center space-x-2 text-indigo-600">
                                 <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                                 <h1 className="text-xl font-bold tracking-tight">ID Studio<span className="text-slate-800">Pro</span></h1>
                             </div>
-                            {selectedImage && (
-                                <button onClick={() => {setSelectedImage(null); setResultImage(null);}} className="text-sm font-medium text-slate-500 hover:text-slate-800 transition-colors">
-                                    Làm lại từ đầu
+                            <div className="flex items-center space-x-4">
+                                <button onClick={() => setShowApiKeyModal(true)} className="text-sm font-medium text-slate-500 hover:text-indigo-600 transition-colors flex items-center">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                                    </svg>
+                                    {apiKey ? 'Đã nhập API Key' : 'Nhập API Key'}
                                 </button>
-                            )}
+                                {selectedImage && (
+                                    <button onClick={() => {setSelectedImage(null); setResultImage(null);}} className="text-sm font-medium text-slate-500 hover:text-slate-800 transition-colors">
+                                        Làm lại từ đầu
+                                    </button>
+                                )}
+                            </div>
                         </div>
                     </header>
 
-                    <main className="max-w-6xl mx-auto px-4 mt-8">
+                    <main className="max-w-6xl mx-auto px-4 mt-8 relative z-10">
+                        {/* Error Message */}
+                        {error && (
+                            <div className="max-w-xl mx-auto mb-6 bg-red-50 border-l-4 border-red-500 p-4 rounded-md shadow-sm">
+                                <div className="flex">
+                                    <div className="flex-shrink-0">
+                                        <svg className="h-5 w-5 text-red-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                                        </svg>
+                                    </div>
+                                    <div className="ml-3">
+                                        <p className="text-sm text-red-700">{error}</p>
+                                    </div>
+                                    <div className="ml-auto pl-3">
+                                        <div className="-mx-1.5 -my-1.5">
+                                            <button onClick={() => setError(null)} className="inline-flex bg-red-50 rounded-md p-1.5 text-red-500 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-red-50 focus:ring-red-600">
+                                                <span className="sr-only">Dismiss</span>
+                                                <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                                    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {!selectedImage ? (
                             // Màn hình tải ảnh lên
                             <div className="max-w-xl mx-auto mt-20">
@@ -554,9 +607,9 @@
                                                 <div>
                                                     <label className="block text-sm font-semibold text-slate-700 mb-2">Ánh sáng Studio</label>
                                                     <select className="w-full bg-slate-50 border border-slate-200 text-sm rounded-xl p-3" value={settings.lighting} onChange={(e) => setSettings(s => ({...s, lighting: e.target.value}))}>
-                                                        <option value="studio">🌤️ Chuẩn Studio (Sáng đều mặt)</option>
-                                                        <option value="bright">☀️ Trắng sáng (Xóa bóng râm)</option>
-                                                        <option value="cinematic">🎭 Chiều sâu (Tôn khối mặt)</option>
+                                                        <option value="studio">🌤️ Chuẩn ảnh thẻ (Mềm)</option>
+                                                        <option value="bright">☀️ Sáng rực rỡ (Trẻ trung)</option>
+                                                        <option value="cinematic">🎭 Nổi bật khối (Sâu)</option>
                                                     </select>
                                                 </div>
                                             </div>
@@ -654,6 +707,50 @@
                             </div>
                         )}
                     </main>
+
+                    {/* API Key Modal */}
+                    {showApiKeyModal && (
+                        <div className="fixed inset-0 bg-slate-900/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                            <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl relative z-50">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="text-lg font-bold text-slate-800">Nhập Google API Key</h3>
+                                    <button onClick={() => setShowApiKeyModal(false)} className="text-slate-400 hover:text-slate-600">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    </button>
+                                </div>
+                                <p className="text-sm text-slate-500 mb-4">
+                                    Để sử dụng tính năng AI, bạn cần nhập API Key từ Google AI Studio. Key này sẽ được lưu trên trình duyệt của bạn.
+                                </p>
+                                <div className="mb-4">
+                                    <label htmlFor="apiKeyInput" className="block text-sm font-medium text-slate-700 mb-1">API Key của bạn</label>
+                                    <input
+                                        type="text"
+                                        id="apiKeyInput"
+                                        ref={apiKeyInputRef}
+                                        defaultValue={apiKey}
+                                        placeholder="AIzaSy..."
+                                        className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl focus:ring-indigo-500 focus:border-indigo-500 block p-3 shadow-sm"
+                                    />
+                                </div>
+                                <div className="flex justify-end space-x-3">
+                                    <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-600 hover:text-indigo-800 flex items-center">
+                                        Lấy Key miễn phí
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                        </svg>
+                                    </a>
+                                    <button
+                                        onClick={handleSaveApiKey}
+                                        className="px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-xl shadow-md hover:bg-indigo-700 transition-all"
+                                    >
+                                        Lưu Key
+                                        </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         }
