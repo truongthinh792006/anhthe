@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI ID Photo Studio Pro</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        /* Range Slider Styling */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: #4f46e5;
+            cursor: pointer;
+            margin-top: -6px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: #e2e8f0;
+            border-radius: 2px;
+        }
+        input[type=range]:focus { outline: none; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useRef, useEffect, useCallback } = React;
+
+        const CLOTHES_OPTIONS = [
+            { id: 'original', name: '👕 Giữ nguyên trang phục gốc', group: 'Mặc định' },
+            // Nam
+            { id: 'male_suit_tie', name: '👔 Vest đen & Cà vạt (Nam)', group: 'Nam giới' },
+            { id: 'male_shirt', name: '👔 Sơ mi trắng (Nam)', group: 'Nam giới' },
+            { id: 'male_casual', name: '👕 Áo Polo lịch sự (Nam)', group: 'Nam giới' },
+            // Nữ
+            { id: 'female_shirt', name: '👚 Sơ mi trắng (Nữ)', group: 'Nữ giới' },
+            { id: 'female_blazer', name: '🧥 Vest công sở (Nữ)', group: 'Nữ giới' },
+            { id: 'female_aodai', name: '🌸 Áo dài truyền thống (Nữ)', group: 'Nữ giới' },
+            { id: 'female_casual', name: '👗 Đầm công sở thanh lịch (Nữ)', group: 'Nữ giới' },
+            { id: 'custom_blazer_white_collar', name: '🧥 Vest đen cổ sơ mi trắng bẻ ngoài (Nữ)', group: 'Nữ giới' },
+            // Người lớn tuổi
+            { id: 'elder_male_suit', name: '👴 Vest trung niên (Nam)', group: 'Người lớn tuổi' },
+            { id: 'elder_male_shirt', name: '👴 Sơ mi sẫm màu (Nam)', group: 'Người lớn tuổi' },
+            { id: 'elder_female_aodai', name: '👵 Áo dài nhung/trầm (Nữ)', group: 'Người lớn tuổi' },
+            { id: 'elder_female_blouse', name: '👵 Áo kiểu kín đáo (Nữ)', group: 'Người lớn tuổi' },
+            // Học sinh
+            { id: 'student_boy', name: '🎒 Sơ mi học sinh (Nam)', group: 'Học sinh / Sinh viên' },
+            { id: 'student_girl', name: '🎒 Sơ mi học sinh (Nữ)', group: 'Học sinh / Sinh viên' },
+        ];
+
+        function App() {
+            // Main States
+            const [selectedImage, setSelectedImage] = useState(null);
+            const [resultImage, setResultImage] = useState(null);
+            const [isProcessing, setIsProcessing] = useState(false);
+            const [error, setError] = useState(null);
+            const [activeTab, setActiveTab] = useState('transform'); // transform or color
+
+            // Cropping & Tone State
+            const [crop, setCrop] = useState({ 
+                x: 0, y: 0, zoom: 1, rotation: 0, 
+                brightness: 100, contrast: 100, saturation: 100 
+            });
+            const [isDraggingCrop, setIsDraggingCrop] = useState(false);
+            const dragStartCrop = useRef({ x: 0, y: 0 });
+            
+            // Settings State
+            const [settings, setSettings] = useState({
+                size: '3x4', // '3x4' or '4x6' or '3.5x4.5'
+                bgColor: 'white', // white, blue, red
+                clothes: 'male_suit_tie',
+                hair: 'tidy', // keep, tidy
+                skin: 50, // 0-100
+                lighting: 'studio' // studio, bright, cinematic
+            });
+
+            // UI State
+            const [sliderPos, setSliderPos] = useState(50);
+            const imgRef = useRef(null);
+            const containerRef = useRef(null);
+
+            const handleImageUpload = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    if (file.size > 10 * 1024 * 1024) {
+                        setError("Kích thước ảnh quá lớn. Vui lòng chọn ảnh dưới 10MB.");
+                        return;
+                    }
+                    setError(null);
+                    setSelectedImage(URL.createObjectURL(file));
+                    setResultImage(null);
+                    setCrop({ x: 0, y: 0, zoom: 1, rotation: 0, brightness: 100, contrast: 100, saturation: 100 });
+                    setSliderPos(50);
+                }
+            };
+
+            const onDragStart = (e) => {
+                setIsDraggingCrop(true);
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                dragStartCrop.current = { x: clientX - crop.x, y: clientY - crop.y };
+            };
+
+            const onDragMove = useCallback((e) => {
+                if (!isDraggingCrop) return;
+                e.preventDefault(); // Prevent scrolling on touch
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                setCrop(prev => ({
+                    ...prev,
+                    x: clientX - dragStartCrop.current.x,
+                    y: clientY - dragStartCrop.current.y
+                }));
+            }, [isDraggingCrop]);
+
+            const onDragEnd = () => { setIsDraggingCrop(false); };
+
+            useEffect(() => {
+                if (isDraggingCrop) {
+                    window.addEventListener('mousemove', onDragMove);
+                    window.addEventListener('mouseup', onDragEnd);
+                    window.addEventListener('touchmove', onDragMove, { passive: false });
+                    window.addEventListener('touchend', onDragEnd);
+                } else {
+                    window.removeEventListener('mousemove', onDragMove);
+                    window.removeEventListener('mouseup', onDragEnd);
+                    window.removeEventListener('touchmove', onDragMove);
+                    window.removeEventListener('touchend', onDragEnd);
+                }
+                return () => {
+                    window.removeEventListener('mousemove', onDragMove);
+                    window.removeEventListener('mouseup', onDragEnd);
+                    window.removeEventListener('touchmove', onDragMove);
+                    window.removeEventListener('touchend', onDragEnd);
+                };
+            }, [isDraggingCrop, onDragMove]);
+
+            const getAspectRatio = () => {
+                if (settings.size === '3x4') return 3/4;
+                if (settings.size === '4x6') return 4/6;
+                if (settings.size === '3.5x4.5') return 3.5/4.5;
+                return 3/4;
+            };
+
+            // Xây dựng lệnh (Prompt) cho AI thực thi dựa trên cài đặt
+            const buildPrompt = () => {
+                let prompt = "You are a professional ID photo editor. Your task is to change the clothing and background of the uploaded image WHILE STRICTLY PRESERVING THE EXACT FACE AND IDENTITY OF THE PERSON.\n\n";
+                
+                prompt += "CRITICAL CONSTRAINTS:\n";
+                prompt += "- DO NOT redraw, swap, or alter the face, eyes, nose, mouth, or facial structure. The identity MUST remain 100% identical to the input image.\n";
+                prompt += "- Only apply edits to the BACKGROUND and the CLOTHING (from the neck down).\n\n";
+
+                prompt += "EDITING INSTRUCTIONS:\n";
+                
+                // Background
+                prompt += `1. Background: Remove the current background and replace it with a solid, pure ${settings.bgColor} color.\n`;
+
+                // Clothes
+                prompt += `2. Clothing: Replace the clothing with `;
+                if (settings.clothes === 'original') prompt += "the exact original clothing (do not change it).\n";
+                else if (settings.clothes === 'male_suit_tie') prompt += "a highly realistic formal dark suit, crisp white dress shirt, and a dark elegant necktie. Ensure realistic fabric textures and natural fit.\n";
+                else if (settings.clothes === 'male_shirt') prompt += "a highly realistic crisp white formal long-sleeve office shirt.\n";
+                else if (settings.clothes === 'male_casual') prompt += "a neat dark polo shirt.\n";
+                else if (settings.clothes === 'female_shirt') prompt += "an elegant white office blouse with realistic fabric folds.\n";
+                else if (settings.clothes === 'female_blazer') prompt += "a professional dark office blazer worn over a light-colored shirt.\n";
+                else if (settings.clothes === 'female_aodai') prompt += "a beautiful, elegant traditional Vietnamese Ao Dai dress.\n";
+                else if (settings.clothes === 'female_casual') prompt += "a polite and elegant office dress.\n";
+                else if (settings.clothes === 'custom_blazer_white_collar') prompt += "a black suit jacket with a crisp pure white shirt. The wide collar of the white shirt is explicitly styled to be folded OUTSIDE and ON TOP OF the black jacket lapels. The shirt MUST be pure white, not blue. This outside collar detail is mandatory.\n";
+                else if (settings.clothes === 'elder_male_suit') prompt += "a classic, slightly looser dark suit with a tie, appropriate for an older gentleman.\n";
+                else if (settings.clothes === 'elder_male_shirt') prompt += "a mature, comfortable dark dress shirt.\n";
+                else if (settings.clothes === 'elder_female_aodai') prompt += "a traditional dark velvet Ao Dai, suitable for an older woman.\n";
+                else if (settings.clothes === 'elder_female_blouse') prompt += "a modest, elegant blouse for an older woman.\n";
+                else if (settings.clothes === 'student_boy') prompt += "a standard white school uniform shirt with a collar.\n";
+                else if (settings.clothes === 'student_girl') prompt += "a standard white school uniform shirt with a collar.\n";
+
+                // Hair
+                prompt += `3. Hair: `;
+                if (settings.hair === 'tidy') prompt += "Neaten the stray hairs on the outer silhouette, but keep the core hairstyle and face completely untouched.\n";
+                else prompt += "Do not touch the hair. Keep it exactly as it is.\n";
+
+                // Skin & Lighting
+                prompt += `4. Retouching: `;
+                if (settings.skin > 70) prompt += "Apply high-end professional skin retouching. Smooth skin naturally, remove blemishes, and even out skin tone perfectly without making it look plastic.\n";
+                else if (settings.skin > 20) prompt += "Apply subtle, natural skin smoothing. Remove minor blemishes while keeping realistic skin texture.\n";
+                else prompt += "Keep the original skin texture exactly as it is. NO smoothing.\n";
+
+                prompt += `5. Professional Studio Lighting: `;
+                if (settings.lighting === 'studio') prompt += "Apply professional ID photo studio lighting (even flash lighting). Illuminate the face perfectly and evenly, removing harsh shadows, dark under-eye circles, or uneven exposure from the original photo. Make it look like it was shot by a professional photographer in a well-lit studio.\n";
+                else if (settings.lighting === 'bright') prompt += "Apply bright, high-key studio lighting. The face must be exceptionally bright, clear, and radiant, eliminating almost all shadows for a fresh, energetic look.\n";
+                else if (settings.lighting === 'cinematic') prompt += "Apply professional portrait lighting with subtle depth (butterfly lighting). Ensure the face is well-lit for an ID, but with soft, natural modeling to define the facial structure beautifully.\n";
+
+                return prompt;
+            };
+
+            const getCroppedCanvas = () => {
+                if (!selectedImage || !imgRef.current || !containerRef.current) return null;
+
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                
+                let width = 600;
+                let height = 800;
+                if (settings.size === '3x4') { width = 600; height = 800; }
+                else if (settings.size === '4x6') { width = 600; height = 900; }
+                else if (settings.size === '3.5x4.5') { width = 700; height = 900; }
+                
+                canvas.width = width;
+                canvas.height = height;
+                
+                // Vẽ nền trắng cho ảnh PNG
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, width, height);
+
+                const img = imgRef.current;
+                const container = containerRef.current;
+                const cw = container.clientWidth;
+                const ch = container.clientHeight;
+
+                const scaleX = width / cw;
+                const scaleY = height / ch;
+
+                ctx.save();
+                ctx.translate(width / 2, height / 2); // Tâm canvas mới
+                
+                // Áp dụng các biến đổi: x, y, zoom, rotation
+                ctx.translate(crop.x * scaleX, crop.y * scaleY);
+                ctx.scale(crop.zoom, crop.zoom);
+                ctx.rotate((crop.rotation * Math.PI) / 180);
+                
+                // Áp dụng Tone màu
+                ctx.filter = `brightness(${crop.brightness}%) contrast(${crop.contrast}%) saturate(${crop.saturation}%)`;
+                
+                // Vẽ ảnh
+                const imgAspect = img.naturalWidth / img.naturalHeight;
+                let drawWidth = width;
+                let drawHeight = width / imgAspect;
+                if (drawHeight < height) {
+                    drawHeight = height;
+                    drawWidth = height * imgAspect;
+                }
+                
+                ctx.drawImage(img, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+                ctx.restore();
+
+                return canvas;
+            };
+
+            const generateImage = async () => {
+                setIsProcessing(true);
+                setError(null);
+                
+                try {
+                    const canvas = getCroppedCanvas();
+                    if (!canvas) return;
+
+                    // Convert ảnh đã crop sang Base64 dạng JPEG
+                    const base64Image = canvas.toDataURL('image/jpeg', 0.9);
+                    const base64Data = base64Image.split(',')[1];
+
+                    // 2. GỌI API GEMINI 3.1 FLASH IMAGE ĐỂ XỬ LÝ THỰC SỰ
+                    const apiKey = ""; // API Key được Canvas tự động tiêm vào
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent?key=${apiKey}`;
+                    
+                    const payload = {
+                        contents: [{
+                            role: "user",
+                            parts: [
+                                { text: buildPrompt() },
+                                {
+                                    inlineData: {
+                                        mimeType: "image/jpeg",
+                                        data: base64Data
+                                    }
+                                }
+                            ]
+                        }],
+                        generationConfig: {
+                            responseModalities: ['TEXT', 'IMAGE']
+                        }
+                    };
+
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    const result = await response.json();
+                    
+                    // Lấy ảnh từ phản hồi của AI
+                    const part = result?.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+
+                    if (part && part.inlineData) {
+                        const finalImageUrl = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+                        setResultImage(finalImageUrl);
+                    } else {
+                        console.error("AI Response error:", result);
+                        setError("AI không thể tạo ảnh ở cấu hình này. Vui lòng thử đổi trang phục hoặc ảnh đầu vào.");
+                    }
+
+                } catch (err) {
+                    setError("Có lỗi kết nối máy chủ AI. Vui lòng thử lại sau.");
+                    console.error(err);
+                } finally {
+                    setIsProcessing(false);
+                }
+            };
+
+            const handleDirectExport = () => {
+                const canvas = getCroppedCanvas();
+                if (canvas) {
+                    const imageUrl = canvas.toDataURL('image/jpeg', 0.95);
+                    const link = document.createElement('a');
+                    link.href = imageUrl;
+                    link.download = `ID_Photo_Crop_${settings.size}.jpg`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                }
+            };
+
+            const handleAIAdvice = () => {
+                // Mô phỏng AI tự động chọn cấu hình dựa trên mục đích (Ví dụ)
+                alert("Tính năng AI tư vấn đang hoạt động ngầm. Gợi ý: Nếu xin Visa, nền trắng và Sơ mi/Vest là chuẩn nhất!");
+                setSettings(prev => ({...prev, bgColor: 'white', clothes: 'male_suit_tie', skin: 30}));
+            };
+
+            return (
+                <div className="min-h-screen pb-12">
+                    {/* Header */}
+                    <header className="bg-white border-b border-slate-200 sticky top-0 z-50">
+                        <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+                            <div className="flex items-center space-x-2 text-indigo-600">
+                                <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                <h1 className="text-xl font-bold tracking-tight">ID Studio<span className="text-slate-800">Pro</span></h1>
+                            </div>
+                            {selectedImage && (
+                                <button onClick={() => {setSelectedImage(null); setResultImage(null);}} className="text-sm font-medium text-slate-500 hover:text-slate-800 transition-colors">
+                                    Làm lại từ đầu
+                                </button>
+                            )}
+                        </div>
+                    </header>
+
+                    <main className="max-w-6xl mx-auto px-4 mt-8">
+                        {!selectedImage ? (
+                            // Màn hình tải ảnh lên
+                            <div className="max-w-xl mx-auto mt-20">
+                                <div className="bg-white p-10 rounded-3xl shadow-sm border border-slate-200 text-center relative overflow-hidden group">
+                                    <div className="absolute inset-0 bg-indigo-50/50 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                                    <div className="relative">
+                                        <div className="mx-auto w-20 h-20 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mb-6">
+                                            <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                                        </div>
+                                        <h2 className="text-2xl font-bold text-slate-800 mb-2">Tạo ảnh thẻ chuyên nghiệp</h2>
+                                        <p className="text-slate-500 mb-8 max-w-sm mx-auto">Tải lên một bức ảnh chụp rõ mặt, AI sẽ tự động xử lý phông nền, thay trang phục và làm mịn da.</p>
+                                        
+                                        <label className="inline-flex cursor-pointer items-center justify-center px-8 py-3.5 text-base font-semibold text-white bg-indigo-600 rounded-xl shadow-md hover:bg-indigo-700 hover:shadow-lg transition-all">
+                                            <span>Chọn ảnh từ thiết bị</span>
+                                            <input type="file" className="hidden" accept="image/jpeg, image/png, image/webp" onChange={handleImageUpload} />
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            // Màn hình chỉnh sửa chính
+                            <div className="flex flex-col lg:flex-row gap-8 items-start">
+                                
+                                {/* CỘT TRÁI: Khu vực Ảnh & Căn chỉnh */}
+                                <div className="w-full lg:w-[45%] flex flex-col space-y-4">
+                                    {/* Khung Crop Ảnh */}
+                                    <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+                                        <div className="flex justify-between items-center mb-3">
+                                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 font-bold text-xs mr-2">1</span>
+                                            <h3 className="font-semibold text-slate-800 flex-1">Căn chỉnh & Màu sắc</h3>
+                                            <div className="flex space-x-1 bg-slate-100 p-1 rounded-lg">
+                                                <button onClick={() => setSettings(s => ({...s, size: '3x4'}))} className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${settings.size === '3x4' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}>3x4</button>
+                                                <button onClick={() => setSettings(s => ({...s, size: '4x6'}))} className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${settings.size === '4x6' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}>4x6</button>
+                                                <button onClick={() => setSettings(s => ({...s, size: '3.5x4.5'}))} className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${settings.size === '3.5x4.5' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}>3.5x4.5 (Visa)</button>
+                                            </div>
+                                        </div>
+
+                                        {/* Container Crop */}
+                                        <div 
+                                            ref={containerRef}
+                                            className="relative w-full mx-auto overflow-hidden bg-slate-100 border border-slate-300 cursor-move rounded-xl select-none touch-none"
+                                            style={{ aspectRatio: getAspectRatio() }}
+                                            onMouseDown={onDragStart}
+                                            onTouchStart={onDragStart}
+                                        >
+                                            {/* Ảnh được transform */}
+                                            <img 
+                                                ref={imgRef}
+                                                src={selectedImage}
+                                                className="absolute origin-center max-w-none pointer-events-none"
+                                                style={{ 
+                                                    width: '100%', 
+                                                    top: '50%', left: '50%',
+                                                    transform: `translate(calc(-50% + ${crop.x}px), calc(-50% + ${crop.y}px)) scale(${crop.zoom}) rotate(${crop.rotation}deg)`,
+                                                    filter: `brightness(${crop.brightness}%) contrast(${crop.contrast}%) saturate(${crop.saturation}%)`
+                                                }}
+                                                draggable={false}
+                                                alt="Source"
+                                            />
+                                            
+                                            {/* Overlay Hướng dẫn */}
+                                            {!resultImage && (
+                                                <div className="absolute inset-0 pointer-events-none z-10 border-[1px] border-white/40">
+                                                    <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+                                                        <defs>
+                                                            <mask id="faceMask">
+                                                                <rect width="100%" height="100%" fill="white" />
+                                                                <ellipse cx="50%" cy="42%" rx="20%" ry="25%" fill="black" />
+                                                                <path d="M 20% 100% Q 50% 70% 80% 100%" fill="black" stroke="black" strokeWidth="5"/>
+                                                            </mask>
+                                                        </defs>
+                                                        <rect width="100%" height="100%" fill="rgba(0,0,0,0.3)" mask="url(#faceMask)" />
+                                                        <ellipse cx="50%" cy="42%" rx="20%" ry="25%" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="1" strokeDasharray="4,4" />
+                                                        <path d="M 20% 100% Q 50% 70% 80% 100%" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="1" strokeDasharray="4,4"/>
+                                                        <line x1="22%" y1="42%" x2="78%" y2="42%" stroke="white" strokeWidth="1" strokeDasharray="2,2" />
+                                                    </svg>
+                                                    <div className="absolute bottom-2 w-full text-center text-white text-[10px] font-medium drop-shadow-md">Kéo ảnh để khớp với khung</div>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Bảng Tabs (Bên dưới ảnh) */}
+                                        <div className="mt-4">
+                                            <div className="flex border-b border-slate-200 mb-3">
+                                                <button onClick={() => setActiveTab('transform')} className={`pb-2 px-4 text-sm font-semibold transition-colors ${activeTab === 'transform' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}>Kích thước & Góc</button>
+                                                <button onClick={() => setActiveTab('color')} className={`pb-2 px-4 text-sm font-semibold transition-colors ${activeTab === 'color' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}>Màu sắc</button>
+                                            </div>
+
+                                            {/* Tab Transform */}
+                                            {activeTab === 'transform' && (
+                                                <div className="space-y-4">
+                                                    <div className="flex items-center space-x-3">
+                                                        <span className="text-xs font-medium text-slate-500 w-16">Thu phóng</span>
+                                                        <input type="range" min="0.3" max="3" step="0.05" value={crop.zoom} onChange={(e) => setCrop(prev => ({ ...prev, zoom: parseFloat(e.target.value) }))} />
+                                                        <span className="text-xs text-slate-400 w-8 text-right">{Math.round(crop.zoom * 100)}%</span>
+                                                    </div>
+                                                    <div className="flex items-center space-x-3">
+                                                        <span className="text-xs font-medium text-slate-500 w-16">Xoay nghiêng</span>
+                                                        <input type="range" min="-180" max="180" step="1" value={crop.rotation} onChange={(e) => setCrop(prev => ({ ...prev, rotation: parseInt(e.target.value) }))} />
+                                                        <span className="text-xs text-slate-400 w-8 text-right">{crop.rotation}°</span>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Tab Color */}
+                                            {activeTab === 'color' && (
+                                                <div className="space-y-4">
+                                                    <div className="flex justify-end -mt-8">
+                                                        <button onClick={() => setCrop(p => ({...p, brightness: 100, contrast: 100, saturation: 100}))} className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded">Reset Màu</button>
+                                                    </div>
+                                                    <div className="flex items-center space-x-3">
+                                                        <span className="text-xs font-medium text-slate-500 w-16">Độ sáng</span>
+                                                        <input type="range" min="50" max="150" step="1" value={crop.brightness} onChange={(e) => setCrop(prev => ({ ...prev, brightness: parseInt(e.target.value) }))} />
+                                                        <span className="text-xs text-slate-400 w-8 text-right">{crop.brightness}%</span>
+                                                    </div>
+                                                    <div className="flex items-center space-x-3">
+                                                        <span className="text-xs font-medium text-slate-500 w-16">Tương phản</span>
+                                                        <input type="range" min="50" max="150" step="1" value={crop.contrast} onChange={(e) => setCrop(prev => ({ ...prev, contrast: parseInt(e.target.value) }))} />
+                                                        <span className="text-xs text-slate-400 w-8 text-right">{crop.contrast}%</span>
+                                                    </div>
+                                                    <div className="flex items-center space-x-3">
+                                                        <span className="text-xs font-medium text-slate-500 w-16">Bão hoà</span>
+                                                        <input type="range" min="0" max="200" step="1" value={crop.saturation} onChange={(e) => setCrop(prev => ({ ...prev, saturation: parseInt(e.target.value) }))} />
+                                                        <span className="text-xs text-slate-400 w-8 text-right">{crop.saturation}%</span>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* CỘT PHẢI: Tuỳ chọn AI */}
+                                <div className="w-full lg:w-[55%] flex flex-col space-y-5">
+                                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                                        <div className="flex items-center mb-5">
+                                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 font-bold text-xs mr-2">2</span>
+                                            <h3 className="font-bold text-lg text-slate-800">Cấu hình AI Studio</h3>
+                                        </div>
+
+                                        <div className="space-y-6">
+                                            {/* Phông nền */}
+                                            <div>
+                                                <label className="block text-sm font-semibold text-slate-700 mb-2">Màu phông nền</label>
+                                                <div className="flex space-x-3">
+                                                    {[{id: 'white', name: 'Trắng', color: 'bg-white border-slate-300'}, {id: 'blue', name: 'Xanh', color: 'bg-blue-600 border-blue-600'}, {id: 'red', name: 'Đỏ', color: 'bg-red-600 border-red-600'}].map(bg => (
+                                                        <button key={bg.id} onClick={() => setSettings(s => ({...s, bgColor: bg.id}))} className={`flex items-center px-4 py-2 rounded-xl border-2 transition-all ${settings.bgColor === bg.id ? 'border-indigo-600 shadow-sm bg-indigo-50/50' : 'border-transparent bg-slate-50 hover:bg-slate-100'}`}>
+                                                            <div className={`w-5 h-5 rounded-full border mr-2 shadow-inner ${bg.color}`}></div>
+                                                            <span className={`text-sm font-medium ${settings.bgColor === bg.id ? 'text-indigo-700' : 'text-slate-600'}`}>{bg.name}</span>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            {/* Trang phục */}
+                                            <div>
+                                                <label className="block text-sm font-semibold text-slate-700 mb-2">Thay trang phục</label>
+                                                <select 
+                                                    className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl focus:ring-indigo-500 focus:border-indigo-500 block p-3 shadow-sm"
+                                                    value={settings.clothes}
+                                                    onChange={(e) => setSettings(s => ({...s, clothes: e.target.value}))}
+                                                >
+                                                    {Array.from(new Set(CLOTHES_OPTIONS.map(c => c.group))).map(group => (
+                                                        <optgroup key={group} label={group} className="font-semibold text-slate-500">
+                                                            {CLOTHES_OPTIONS.filter(c => c.group === group).map(c => (
+                                                                <option key={c.id} value={c.id} className="font-normal text-slate-800">{c.name}</option>
+                                                            ))}
+                                                        </optgroup>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            {/* Kiểu tóc & Ánh sáng */}
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className="block text-sm font-semibold text-slate-700 mb-2">Xử lý kiểu tóc</label>
+                                                    <select className="w-full bg-slate-50 border border-slate-200 text-sm rounded-xl p-3" value={settings.hair} onChange={(e) => setSettings(s => ({...s, hair: e.target.value}))}>
+                                                        <option value="keep">✂️ Giữ nguyên nếp tóc</option>
+                                                        <option value="tidy">✨ Làm gọn gàng, vào nếp</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-sm font-semibold text-slate-700 mb-2">Ánh sáng Studio</label>
+                                                    <select className="w-full bg-slate-50 border border-slate-200 text-sm rounded-xl p-3" value={settings.lighting} onChange={(e) => setSettings(s => ({...s, lighting: e.target.value}))}>
+                                                        <option value="studio">🌤️ Chuẩn Studio (Sáng đều mặt)</option>
+                                                        <option value="bright">☀️ Trắng sáng (Xóa bóng râm)</option>
+                                                        <option value="cinematic">🎭 Chiều sâu (Tôn khối mặt)</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+
+                                            {/* Mịn da */}
+                                            <div>
+                                                <div className="flex justify-between items-center mb-2">
+                                                    <label className="block text-sm font-semibold text-slate-700">Làm mịn da (Retouch)</label>
+                                                    <span className="text-xs text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded">{settings.skin}%</span>
+                                                </div>
+                                                <input type="range" min="0" max="100" step="5" value={settings.skin} onChange={(e) => setSettings(s => ({ ...s, skin: parseInt(e.target.value) }))} className="mb-1" />
+                                                <div className="flex justify-between text-[10px] text-slate-400 font-medium px-1">
+                                                    <span>Giữ thực tế</span>
+                                                    <span>Tự nhiên</span>
+                                                    <span>Hoàn hảo</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Action Buttons */}
+                                    <div className="bg-slate-900 p-6 rounded-2xl shadow-xl flex flex-col items-center justify-center text-center relative overflow-hidden space-y-3">
+                                        <div className="absolute -top-10 -right-10 w-32 h-32 bg-indigo-500 rounded-full blur-3xl opacity-30"></div>
+                                        
+                                        {/* Nút Xử lý AI */}
+                                        <button 
+                                            onClick={generateImage}
+                                            disabled={isProcessing}
+                                            className={`relative z-10 w-full py-3.5 rounded-xl font-bold text-lg shadow-[0_0_15px_rgba(79,70,229,0.5)] transition-all ${isProcessing ? 'bg-indigo-500 text-indigo-100 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-500 hover:shadow-[0_0_25px_rgba(79,70,229,0.7)] hover:-translate-y-0.5'}`}
+                                        >
+                                            {isProcessing ? (
+                                                <span className="flex items-center justify-center">
+                                                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                                    Đang kết xuất AI...
+                                                </span>
+                                            ) : '✨ Xử lý ảnh thẻ (Dùng AI)'}
+                                        </button>
+
+                                        {/* Nút Xuất ảnh trực tiếp (Mới) */}
+                                        <button 
+                                            onClick={handleDirectExport}
+                                            disabled={isProcessing}
+                                            className="relative z-10 w-full py-3.5 rounded-xl font-bold text-base text-slate-300 border-2 border-slate-700 hover:bg-slate-800 hover:text-white transition-all flex items-center justify-center"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                            </svg>
+                                            Cắt & Xuất ảnh ngay (Không dùng AI)
+                                        </button>
+                                        
+                                        <p className="text-slate-400 text-xs relative z-10 pt-2">AI sẽ mất khoảng vài giây để xử lý. Xuất trực tiếp là tức thì.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* KẾT QUẢ: Modal hoặc Panel hiển thị Before/After */}
+                        {resultImage && (
+                            <div className="fixed inset-0 bg-slate-900/90 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                                <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col md:flex-row">
+                                    {/* Khung Before/After */}
+                                    <div className="w-full md:w-1/2 p-6 bg-slate-100 flex items-center justify-center border-r border-slate-200">
+                                        <div className="relative w-full max-w-sm rounded-xl overflow-hidden shadow-lg border border-slate-300 select-none" style={{ aspectRatio: getAspectRatio() }}>
+                                            {/* After (AI Image) */}
+                                            <img src={resultImage} className="absolute inset-0 w-full h-full object-cover" alt="After" draggable={false} />
+                                            <div className="absolute bottom-4 left-0 w-full text-center text-white/80 text-xs font-semibold drop-shadow-md">Ảnh hoàn thiện</div>
+                                        </div>
+                                    </div>
+                                    
+                                    {/* Khung Tải xuống */}
+                                    <div className="w-full md:w-1/2 p-8 flex flex-col justify-center space-y-6">
+                                        <div>
+                                            <h2 className="text-3xl font-bold text-slate-800 mb-2">Hoàn tất! 🎉</h2>
+                                            <p className="text-slate-500">Ảnh thẻ của bạn đã được xử lý hoàn hảo.</p>
+                                        </div>
+                                        
+                                        <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 flex items-start space-x-3">
+                                            <svg className="w-5 h-5 text-indigo-600 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                            <p className="text-sm text-indigo-900 leading-relaxed">
+                                                Ảnh được xuất ở độ phân giải cao chuẩn kích thước <strong>{settings.size}</strong>. Bạn có thể mang file này ra tiệm để in ngay.
+                                            </p>
+                                        </div>
+
+                                        <div className="space-y-3 pt-4">
+                                            <a href={resultImage} download={`ID_Photo_${settings.size}.jpg`} className="flex items-center justify-center w-full py-3.5 px-4 bg-indigo-600 text-white rounded-xl font-bold shadow-md hover:bg-indigo-700 transition-colors">
+                                                <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                                Tải ảnh xuống (.JPG)
+                                            </a>
+                                            <button onClick={() => setResultImage(null)} className="flex items-center justify-center w-full py-3.5 px-4 bg-white border-2 border-slate-200 text-slate-600 rounded-xl font-bold hover:bg-slate-50 transition-colors">
+                                                Quay lại chỉnh sửa
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </main>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
