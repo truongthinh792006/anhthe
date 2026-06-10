@@ -64,6 +64,8 @@
             { id: 'female_shirt', name: '👚 Sơ mi trắng (Nữ)', group: 'Nữ giới' },
             { id: 'female_blazer', name: '🧥 Vest công sở (Nữ)', group: 'Nữ giới' },
             { id: 'female_aodai', name: '🌸 Áo dài truyền thống (Nữ)', group: 'Nữ giới' },
+            { id: 'female_aodai_round', name: '🌸 Áo dài lụa cổ tròn (Nữ)', group: 'Nữ giới' },
+            { id: 'female_aodai_stand', name: '🌸 Áo dài lụa cổ đứng (Nữ)', group: 'Nữ giới' },
             { id: 'female_casual', name: '👗 Đầm công sở thanh lịch (Nữ)', group: 'Nữ giới' },
             { id: 'custom_blazer_white_collar', name: '🧥 Vest đen cổ sơ mi trắng bẻ ngoài (Nữ)', group: 'Nữ giới' },
             // Người lớn tuổi
@@ -82,12 +84,7 @@
             const [resultImage, setResultImage] = useState(null);
             const [isProcessing, setIsProcessing] = useState(false);
             const [error, setError] = useState(null);
-            const [activeTab, setActiveTab] = useState('transform'); // transform or color
-            
-            // API Key State
-            const [apiKey, setApiKey] = useState(() => localStorage.getItem('gemini_api_key') || '');
-            const [showApiKeyModal, setShowApiKeyModal] = useState(false);
-            const apiKeyInputRef = useRef(null);
+            const [activeTab, setActiveTab] = useState('transform'); 
 
             // Cropping & Tone State
             const [crop, setCrop] = useState({ 
@@ -99,12 +96,12 @@
             
             // Settings State
             const [settings, setSettings] = useState({
-                size: '3x4', // '3x4' or '4x6' or '3.5x4.5'
-                bgColor: 'white', // white, blue, red
+                size: '3x4', 
+                bgColor: 'white', 
                 clothes: 'male_suit_tie',
-                hair: 'tidy', // keep, tidy
-                skin: 50, // 0-100
-                lighting: 'studio' // studio, bright, cinematic
+                hair: 'tidy', 
+                skin: 50, 
+                lighting: 'studio' 
             });
 
             // UI State
@@ -134,7 +131,7 @@
 
             const onDragMove = useCallback((e) => {
                 if (!isDraggingCrop) return;
-                e.preventDefault(); // Prevent scrolling on touch
+                e.preventDefault(); 
                 const clientX = e.touches ? e.touches[0].clientX : e.clientX;
                 const clientY = e.touches ? e.touches[0].clientY : e.clientY;
                 setCrop(prev => ({
@@ -173,32 +170,18 @@
                 return 3/4;
             };
 
-            const handleSaveApiKey = () => {
-                const newKey = apiKeyInputRef.current.value.trim();
-                if (newKey) {
-                    setApiKey(newKey);
-                    localStorage.setItem('gemini_api_key', newKey);
-                    setShowApiKeyModal(false);
-                    setError(null);
-                } else {
-                    setError("Vui lòng nhập API Key hợp lệ.");
-                }
-            };
-
-            // Xây dựng lệnh (Prompt) cho AI thực thi dựa trên cài đặt
             const buildPrompt = () => {
-                let prompt = "You are a professional ID photo editor. Your task is to change the clothing and background of the uploaded image WHILE STRICTLY PRESERVING THE EXACT FACE AND IDENTITY OF THE PERSON.\n\n";
+                let prompt = "You are an expert image editor performing an INPAINTING task. Your strict job is to change ONLY the clothing and background.\n\n";
                 
-                prompt += "CRITICAL CONSTRAINTS:\n";
-                prompt += "- DO NOT redraw, swap, or alter the face, eyes, nose, mouth, or facial structure. The identity MUST remain 100% identical to the input image.\n";
-                prompt += "- Only apply edits to the BACKGROUND and the CLOTHING (from the neck down).\n\n";
+                prompt += "CRITICAL CONSTRAINTS (MANDATORY):\n";
+                prompt += "- ABSOLUTELY DO NOT TOUCH, REDRAW, OR ALTER THE FACE, HEAD, HAIR, OR SKIN ON THE FACE in any way.\n";
+                prompt += "- The face, expression, and identity MUST remain 100% identically preserved from the input image. No exceptions.\n";
+                prompt += "- ONLY apply edits to the BACKGROUND and the CLOTHING (from the collarbone/neck down).\n\n";
 
                 prompt += "EDITING INSTRUCTIONS:\n";
                 
-                // Background
                 prompt += `1. Background: Remove the current background and replace it with a solid, pure ${settings.bgColor} color.\n`;
 
-                // Clothes
                 prompt += `2. Clothing: Replace the clothing with `;
                 if (settings.clothes === 'original') prompt += "the exact original clothing (do not change it).\n";
                 else if (settings.clothes === 'male_suit_tie') prompt += "a highly realistic formal dark suit, crisp white dress shirt, and a dark elegant necktie. Ensure realistic fabric textures and natural fit.\n";
@@ -207,6 +190,8 @@
                 else if (settings.clothes === 'female_shirt') prompt += "an elegant white office blouse with realistic fabric folds.\n";
                 else if (settings.clothes === 'female_blazer') prompt += "a professional dark office blazer worn over a light-colored shirt.\n";
                 else if (settings.clothes === 'female_aodai') prompt += "a beautiful, elegant traditional Vietnamese Ao Dai dress.\n";
+                else if (settings.clothes === 'female_aodai_round') prompt += "a beautiful traditional Vietnamese Ao Dai dress with a ROUND NECKLINE (no collar), made of soft, flowing, smooth silk fabric.\n";
+                else if (settings.clothes === 'female_aodai_stand') prompt += "a beautiful traditional Vietnamese Ao Dai dress with a classic STANDING COLLAR, made of soft, flowing, smooth silk fabric.\n";
                 else if (settings.clothes === 'female_casual') prompt += "a polite and elegant office dress.\n";
                 else if (settings.clothes === 'custom_blazer_white_collar') prompt += "a black suit jacket with a crisp pure white shirt. The wide collar of the white shirt is explicitly styled to be folded OUTSIDE and ON TOP OF the black jacket lapels. The shirt MUST be pure white, not blue. This outside collar detail is mandatory.\n";
                 else if (settings.clothes === 'elder_male_suit') prompt += "a classic, slightly looser dark suit with a tie, appropriate for an older gentleman.\n";
@@ -216,25 +201,24 @@
                 else if (settings.clothes === 'student_boy') prompt += "a standard white school uniform shirt with a collar.\n";
                 else if (settings.clothes === 'student_girl') prompt += "a standard white school uniform shirt with a collar.\n";
 
-                // Hair
                 prompt += `3. Hair: `;
-                if (settings.hair === 'tidy') prompt += "Neaten the stray hairs on the outer silhouette, but keep the core hairstyle and face completely untouched.\n";
+                if (settings.hair === 'tidy') prompt += "Neaten only the stray flying hairs on the extreme outer edges of the silhouette, but keep the core hairstyle strictly untouched.\n";
                 else prompt += "Do not touch the hair. Keep it exactly as it is.\n";
 
-                // Skin & Lighting
-                prompt += `4. Retouching & Lighting: `;
+                prompt += `4. Lighting: `;
                 if (settings.lighting === 'studio') {
-                    prompt += "Apply professional studio lighting with even flash to eliminate shadows and dark circles under the eyes. ";
+                    prompt += "Apply soft studio lighting ONLY to the newly generated clothing and background to match the original image.\n";
                 } else if (settings.lighting === 'bright') {
-                    prompt += "Apply bright, high-key lighting for a youthful look. ";
+                    prompt += "Apply bright lighting ONLY to the clothing and background.\n";
                 } else if (settings.lighting === 'cinematic') {
-                    prompt += "Apply dramatic, contoured lighting to create depth. ";
+                    prompt += "Apply cinematic lighting ONLY to the clothing and background.\n";
                 }
 
+                prompt += `5. Retouching: `;
                 if (settings.skin > 70) {
-                    prompt += "Apply subtle, natural skin smoothing and evening of skin tone across the face and neck. Do NOT over-blur or change facial features.\n";
+                    prompt += "Apply very subtle smoothing ONLY to the visible neck/chest area of the new clothing. LEAVE THE FACE ALONE.\n";
                 } else {
-                    prompt += "Keep the original skin texture and details exactly as they are. No smoothing.\n";
+                    prompt += "No smoothing.\n";
                 }
 
                 return prompt;
@@ -246,18 +230,20 @@
                 const canvas = document.createElement('canvas');
                 const ctx = canvas.getContext('2d');
                 
-                let width = 600;
-                let height = 800;
-                if (settings.size === '3x4') { width = 600; height = 800; }
-                else if (settings.size === '4x6') { width = 600; height = 900; }
-                else if (settings.size === '3.5x4.5') { width = 700; height = 900; }
+                let width = 1200;
+                let height = 1600;
+                if (settings.size === '3x4') { width = 1200; height = 1600; }
+                else if (settings.size === '4x6') { width = 1200; height = 1800; }
+                else if (settings.size === '3.5x4.5') { width = 1400; height = 1800; }
                 
                 canvas.width = width;
                 canvas.height = height;
                 
-                // Vẽ nền trắng cho ảnh PNG
                 ctx.fillStyle = '#ffffff';
                 ctx.fillRect(0, 0, width, height);
+
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
 
                 const img = imgRef.current;
                 const container = containerRef.current;
@@ -268,17 +254,14 @@
                 const scaleY = height / ch;
 
                 ctx.save();
-                ctx.translate(width / 2, height / 2); // Tâm canvas mới
+                ctx.translate(width / 2, height / 2); 
                 
-                // Áp dụng các biến đổi: x, y, zoom, rotation
                 ctx.translate(crop.x * scaleX, crop.y * scaleY);
                 ctx.scale(crop.zoom, crop.zoom);
                 ctx.rotate((crop.rotation * Math.PI) / 180);
                 
-                // Áp dụng Tone màu
                 ctx.filter = `brightness(${crop.brightness}%) contrast(${crop.contrast}%) saturate(${crop.saturation}%)`;
                 
-                // Vẽ ảnh
                 const imgAspect = img.naturalWidth / img.naturalHeight;
                 let drawWidth = width;
                 let drawHeight = width / imgAspect;
@@ -294,12 +277,6 @@
             };
 
             const generateImage = async () => {
-                if (!apiKey) {
-                    setError("Vui lòng nhập Google API Key trước khi xử lý ảnh.");
-                    setShowApiKeyModal(true);
-                    return;
-                }
-
                 setIsProcessing(true);
                 setError(null);
                 
@@ -307,12 +284,12 @@
                     const canvas = getCroppedCanvas();
                     if (!canvas) return;
 
-                    // Convert ảnh đã crop sang Base64 dạng JPEG
-                    const base64Image = canvas.toDataURL('image/jpeg', 0.9);
+                    const base64Image = canvas.toDataURL('image/jpeg', 0.95);
                     const base64Data = base64Image.split(',')[1];
 
-                    // 2. GỌI API GEMINI 3.1 FLASH IMAGE ĐỂ XỬ LÝ THỰC SỰ
-                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent?key=${apiKey}`;
+                    // Hệ thống sẽ tự động cung cấp API Key ở runtime
+                    const apiKey = "";
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`;
                     
                     const payload = {
                         contents: [{
@@ -338,22 +315,24 @@
                         body: JSON.stringify(payload)
                     });
 
+                    if (!response.ok) {
+                        throw new Error(`Lỗi kết nối từ hệ thống: ${response.status}`);
+                    }
+
                     const result = await response.json();
                     
-                    // Lấy ảnh từ phản hồi của AI
                     const part = result?.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
 
                     if (part && part.inlineData) {
                         const finalImageUrl = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
                         setResultImage(finalImageUrl);
                     } else {
-                        console.error("AI Response error:", result);
-                        setError("AI không thể tạo ảnh ở cấu hình này. Vui lòng kiểm tra lại API Key hoặc thử đổi ảnh đầu vào.");
+                        setError("AI không thể tạo ảnh ở cấu hình này. Vui lòng thử đổi trang phục hoặc điều chỉnh ảnh.");
                     }
 
                 } catch (err) {
-                    setError("Có lỗi kết nối máy chủ AI. Vui lòng kiểm tra kết nối mạng hoặc API Key của bạn.");
                     console.error(err);
+                    setError(`Có lỗi xảy ra: ${err.message}. Vui lòng thử lại.`);
                 } finally {
                     setIsProcessing(false);
                 }
@@ -382,12 +361,6 @@
                                 <h1 className="text-xl font-bold tracking-tight">ID Studio<span className="text-slate-800">Pro</span></h1>
                             </div>
                             <div className="flex items-center space-x-4">
-                                <button onClick={() => setShowApiKeyModal(true)} className="text-sm font-medium text-slate-500 hover:text-indigo-600 transition-colors flex items-center">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-                                    </svg>
-                                    {apiKey ? 'Đã nhập API Key' : 'Nhập API Key'}
-                                </button>
                                 {selectedImage && (
                                     <button onClick={() => {setSelectedImage(null); setResultImage(null);}} className="text-sm font-medium text-slate-500 hover:text-slate-800 transition-colors">
                                         Làm lại từ đầu
@@ -707,50 +680,6 @@
                             </div>
                         )}
                     </main>
-
-                    {/* API Key Modal */}
-                    {showApiKeyModal && (
-                        <div className="fixed inset-0 bg-slate-900/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-                            <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl relative z-50">
-                                <div className="flex justify-between items-center mb-4">
-                                    <h3 className="text-lg font-bold text-slate-800">Nhập Google API Key</h3>
-                                    <button onClick={() => setShowApiKeyModal(false)} className="text-slate-400 hover:text-slate-600">
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                        </svg>
-                                    </button>
-                                </div>
-                                <p className="text-sm text-slate-500 mb-4">
-                                    Để sử dụng tính năng AI, bạn cần nhập API Key từ Google AI Studio. Key này sẽ được lưu trên trình duyệt của bạn.
-                                </p>
-                                <div className="mb-4">
-                                    <label htmlFor="apiKeyInput" className="block text-sm font-medium text-slate-700 mb-1">API Key của bạn</label>
-                                    <input
-                                        type="text"
-                                        id="apiKeyInput"
-                                        ref={apiKeyInputRef}
-                                        defaultValue={apiKey}
-                                        placeholder="AIzaSy..."
-                                        className="w-full bg-slate-50 border border-slate-200 text-slate-800 text-sm rounded-xl focus:ring-indigo-500 focus:border-indigo-500 block p-3 shadow-sm"
-                                    />
-                                </div>
-                                <div className="flex justify-end space-x-3">
-                                    <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-600 hover:text-indigo-800 flex items-center">
-                                        Lấy Key miễn phí
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                        </svg>
-                                    </a>
-                                    <button
-                                        onClick={handleSaveApiKey}
-                                        className="px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-xl shadow-md hover:bg-indigo-700 transition-all"
-                                    >
-                                        Lưu Key
-                                        </button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
                 </div>
             );
         }
